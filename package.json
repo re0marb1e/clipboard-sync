@@ -1,0 +1,20 @@
+{
+  "name": "clipboard-sync",
+  "version": "1.0.0",
+  "description": "Clipboard synchronization server and client",
+  "main": "index.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "bin": "app.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/re0marb1e/clipboard-sync.git"
+  },
+  "author": "re0marb1e",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/re0marb1e/clipboard-sync/issues"
+  },
+  "homepage": "https://github.com/re0marb1e/clipboard-sync#readme"
+}
