@@ -1,4 +1,6 @@
 const net = require('net');
+const tls = require('tls');
+const fs = require('fs');
 const { exec } = require('child_process');
 const util = require('util');
 
@@ -10,12 +12,23 @@ const args = process.argv.slice(2);
 let port = 3000;
 let host = 'localhost';
 let mode = 'server';
+let secure = false;
+let keyPath = null;
+let certPath = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '-p' && i + 1 < args.length) {
     port = parseInt(args[i + 1]);
     i++;
   } else if (args[i] === '-h' && i + 1 < args.length) {
     host = args[i + 1];
+    i++;
+  } else if (args[i] === '-secure') {
+    secure = true;
+  } else if (args[i] === '-key' && i + 1 < args.length) {
+    keyPath = args[i + 1];
+    i++;
+  } else if (args[i] === '-cert' && i + 1 < args.length) {
+    certPath = args[i + 1];
     i++;
   } else if (args[i] === 'server' || args[i] === 'client') {
     mode = args[i];
@@ -27,9 +40,32 @@ if (isNaN(port) || port < 1 || port > 65535) {
   port = 3000;
 }
 
+// Validate TLS parameters for secure mode
+if (secure && mode === 'server' && (!keyPath || !certPath)) {
+  console.error('Error: -secure requires -key <path> and -cert <path> for server mode');
+  process.exit(1);
+}
+
 // Server implementation
 function startServer(port) {
-  const server = net.createServer((socket) => {
+  // TLS options for server
+  let serverOptions = {};
+  if (secure) {
+    try {
+      serverOptions = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+      };
+    } catch (err) {
+      console.error(`Error reading TLS files: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
+  // Create server based on secure flag
+  const server = secure ? tls.createServer(serverOptions, handleConnection) : net.createServer(handleConnection);
+
+  function handleConnection(socket) {
     let buffer = '';
     let lastClientContent = ''; // Track last content received from client
 
@@ -118,22 +154,32 @@ function startServer(port) {
     socket.on('end', () => {
       console.log('Client disconnected');
     });
-  });
+  }
 
   server.on('error', (err) => {
     console.error('Server error:', err);
   });
 
   server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server running on port ${port}${secure ? ' with TLS' : ''}`);
   });
 }
 
 // Client implementation
 async function startClient(port, host) {
-  const client = net.createConnection({ port, host }, () => {
-    console.log(`Connected to server at ${host}:${port}`);
-  });
+  // TLS options for client (accept self-signed certificate for testing)
+  const clientOptions = secure ? {
+    host,
+    port,
+    rejectUnauthorized: false // Allow self-signed certificate
+  } : { host, port };
+
+  // Create client connection based on secure flag
+  const client = secure ? tls.connect(clientOptions, onConnect) : net.createConnection(clientOptions, onConnect);
+
+  function onConnect() {
+    console.log(`Connected to server at ${host}:${port}${secure ? ' with TLS' : ''}`);
+  }
 
   let lastClipboardContent = ''; // Track last content sent to server
   let lastReceivedContent = ''; // Track last content received from server
