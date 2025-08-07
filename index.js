@@ -48,7 +48,7 @@ if (secure && mode === 'server' && (!keyPath || !certPath)) {
 
 // Determine clipboard command based on platform (global)
 const isWindows = process.platform === 'win32';
-const clipboardCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
+const clipboardReadCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
 const clipboardWriteCommand = isWindows ? 'clip' : 'pbcopy';
 
 // Server implementation
@@ -116,7 +116,7 @@ function startServer(port) {
         console.log(body);
 
         // Copy body to clipboard
-        execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardCommand}`)
+        execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`)
           .then(() => {
             console.log('Body copied to clipboard');
             lastClientContent = body; // Update last client content
@@ -251,7 +251,7 @@ async function startClient(port, host) {
       return; // Skip this check to prevent echoing received data
     }
     try {
-      const { stdout } = await execPromise(clipboardCommand);
+      const { stdout } = await execPromise(clipboardReadCommand);
       const data = stdout.trim();
       if (data && data !== lastClipboardContent && data !== lastReceivedContent) {
         // Construct message with UTF-8 encoding
