@@ -46,6 +46,11 @@ if (secure && mode === 'server' && (!keyPath || !certPath)) {
   process.exit(1);
 }
 
+// Determine clipboard command based on platform (global)
+const isWindows = process.platform === 'win32';
+const clipboardCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
+const clipboardWriteCommand = isWindows ? 'clip' : 'pbcopy';
+
 // Server implementation
 function startServer(port) {
   // TLS options for server
@@ -67,12 +72,10 @@ function startServer(port) {
 
   function handleConnection(socket) {
     let buffer = '';
-    let lastClientContent = ''; // Track last content received from client
 
-    // Determine clipboard command based on platform
-    const isWindows = process.platform === 'win32';
-    const clipboardCommand = isWindows ? 'clip' : 'pbcopy';
-    const clipboardReadCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
+    let lastClientContent = ''; // Track last content received from client
+    let lastClipboardContent = ''; // Track last clipboard content sent
+    let skipNextCheck = false; // Flag to skip check after receiving data
 
     socket.on('data', (data) => {
       buffer += data.toString('utf8');
@@ -114,20 +117,23 @@ function startServer(port) {
 
         // Copy body to clipboard
         execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardCommand}`)
-          .then(() => console.log('Body copied to clipboard'))
+          .then(() => {
+            console.log('Body copied to clipboard');
+            lastClientContent = body; // Update last client content
+            skipNextCheck = true; // Skip next clipboard check to avoid loop
+          })
           .catch((err) => console.error('Error copying to clipboard:', err));
-
-        // Update last client content
-        lastClientContent = body;
-
         // Update buffer for next message
         buffer = content.slice(contentLength);
       }
     });
 
     // Periodically check clipboard and send data if changed and not from client
-    let lastClipboardContent = '';
     async function checkAndSendClipboardData() {
+      if (skipNextCheck) {
+        skipNextCheck = false;
+        return; // Skip this check to prevent echoing received data
+      }
       try {
         const { stdout } = await execPromise(clipboardReadCommand);
         const data = stdout.trim();
@@ -183,11 +189,7 @@ async function startClient(port, host) {
 
   let lastClipboardContent = ''; // Track last content sent to server
   let lastReceivedContent = ''; // Track last content received from server
-
-  // Determine clipboard command based on platform
-  const isWindows = process.platform === 'win32';
-  const clipboardCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
-  const clipboardWriteCommand = isWindows ? 'clip' : 'pbcopy';
+  let skipNextCheck = false; // Flag to skip check after receiving data
 
   // Handle incoming data from server
   let buffer = '';
@@ -231,12 +233,12 @@ async function startClient(port, host) {
 
       // Copy body to clipboard
       execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`)
-        .then(() => console.log('Body copied to clipboard'))
+        .then(() => {
+          console.log('Body copied to clipboard');
+          lastReceivedContent = body; // Update last received content
+          skipNextCheck = true; // Skip next clipboard check to avoid loop
+        })
         .catch((err) => console.error('Error copying to clipboard:', err));
-
-      // Update last received content
-      lastReceivedContent = body;
-
       // Update buffer for next message
       buffer = content.slice(contentLength);
     }
@@ -244,6 +246,10 @@ async function startClient(port, host) {
 
   // Periodically check clipboard and send data if changed and not from server
   async function checkAndSendClipboardData() {
+    if (skipNextCheck) {
+      skipNextCheck = false;
+      return; // Skip this check to prevent echoing received data
+    }
     try {
       const { stdout } = await execPromise(clipboardCommand);
       const data = stdout.trim();
