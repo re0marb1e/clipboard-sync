@@ -48,7 +48,7 @@ if (secure && mode === 'server' && (!keyPath || !certPath)) {
 
 // Determine clipboard command based on platform (global)
 const isWindows = process.platform === 'win32';
-const clipboardReadCommand = isWindows ? 'powershell -command Get-Clipboard' : 'pbpaste';
+const clipboardReadCommand = isWindows ? 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"' : 'pbpaste';
 const clipboardWriteCommand = isWindows ? 'clip' : 'pbcopy';
 
 // Server implementation
