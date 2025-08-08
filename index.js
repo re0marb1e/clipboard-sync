@@ -75,7 +75,8 @@ function startServer(port) {
 
     let lastClientContent = ''; // Track last content received from client
     let lastClipboardContent = ''; // Track last clipboard content sent
-    let skipNextCheck = false; // Flag to skip check after receiving data
+    let lastReceivedTime = 0; // Track time of last received data
+    const CHECK_INTERVAL = 2000; // Clipboard check interval in ms
 
     socket.on('data', (data) => {
       buffer += data.toString('utf8');
@@ -120,7 +121,7 @@ function startServer(port) {
           .then(() => {
             console.log('Body copied to clipboard');
             lastClientContent = body; // Update last client content
-            skipNextCheck = true; // Skip next clipboard check to avoid loop
+            lastReceivedTime = Date.now(); // Update last received time
           })
           .catch((err) => console.error('Error copying to clipboard:', err));
         // Update buffer for next message
@@ -130,9 +131,10 @@ function startServer(port) {
 
     // Periodically check clipboard and send data if changed and not from client
     async function checkAndSendClipboardData() {
-      if (skipNextCheck) {
-        skipNextCheck = false;
-        return; // Skip this check to prevent echoing received data
+      // Skip check if within 2 seconds of last received data
+      if (Date.now() - lastReceivedTime < CHECK_INTERVAL) {
+        console.log('Skipping clipboard check due to recent received data');
+        return;
       }
       try {
         const { stdout } = await execPromise(clipboardReadCommand);
@@ -151,8 +153,8 @@ function startServer(port) {
     }
 
     // Check clipboard every 2 seconds
-    setInterval(checkAndSendClipboardData, 2000);
 
+    setInterval(checkAndSendClipboardData, CHECK_INTERVAL);
     socket.on('error', (err) => {
       console.error('Socket error:', err);
     });
@@ -189,7 +191,8 @@ async function startClient(port, host) {
 
   let lastClipboardContent = ''; // Track last content sent to server
   let lastReceivedContent = ''; // Track last content received from server
-  let skipNextCheck = false; // Flag to skip check after receiving data
+  let lastReceivedTime = 0; // Track time of last received data
+  const CHECK_INTERVAL = 2000; // Clipboard check interval in ms
 
   // Handle incoming data from server
   let buffer = '';
@@ -236,7 +239,7 @@ async function startClient(port, host) {
         .then(() => {
           console.log('Body copied to clipboard');
           lastReceivedContent = body; // Update last received content
-          skipNextCheck = true; // Skip next clipboard check to avoid loop
+          lastReceivedTime = Date.now(); // Update last received time
         })
         .catch((err) => console.error('Error copying to clipboard:', err));
       // Update buffer for next message
@@ -246,9 +249,10 @@ async function startClient(port, host) {
 
   // Periodically check clipboard and send data if changed and not from server
   async function checkAndSendClipboardData() {
-    if (skipNextCheck) {
-      skipNextCheck = false;
-      return; // Skip this check to prevent echoing received data
+    // Skip check if within 2 seconds of last received data
+    if (Date.now() - lastReceivedTime < CHECK_INTERVAL) {
+      console.log('Skipping clipboard check due to recent received data');
+      return;
     }
     try {
       const { stdout } = await execPromise(clipboardReadCommand);
@@ -267,8 +271,8 @@ async function startClient(port, host) {
   }
 
   // Check clipboard every 2 seconds
-  setInterval(checkAndSendClipboardData, 2000);
 
+  setInterval(checkAndSendClipboardData, CHECK_INTERVAL);
   client.on('error', (err) => {
     console.error('Client error:', err);
   });
