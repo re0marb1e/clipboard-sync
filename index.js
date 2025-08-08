@@ -51,6 +51,47 @@ const isWindows = process.platform === 'win32';
 const clipboardReadCommand = isWindows ? 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"' : 'pbpaste';
 const clipboardWriteCommand = isWindows ? 'clip' : 'pbcopy';
 
+// 解析传入数据并返回更新后的缓冲区字符串
+function parseIncomingData(buffer, handleBodyCallback) {
+  while (buffer.length > 0) {
+    // Check for header delimiter (\r\n\r\n or \n\n)
+    let headerEnd = buffer.indexOf('\r\n\r\n');
+    let delimiterLength = 4;
+    if (headerEnd === -1) {
+      headerEnd = buffer.indexOf('\n\n');
+      delimiterLength = 2;
+    }
+    if (headerEnd === -1) {
+      console.log('No delimiter found in buffer:', buffer);
+      return buffer;
+    }
+
+    // Extract header and content (UTF-8)
+    const header = buffer.slice(0, headerEnd);
+    const content = buffer.slice(headerEnd + delimiterLength);
+
+    // Parse Content-Length
+    const match = header.match(/Content-Length: (\d+)/i);
+    if (!match) {
+      console.error('Invalid Content-Length header:', header);
+      return '';
+    }
+
+    const contentLength = parseInt(match[1]);
+
+    // Wait until we have all content (check byte length in UTF-8)
+    if (Buffer.byteLength(content, 'utf8') < contentLength) return buffer;
+
+    // Process complete request
+    const body = content.slice(0, contentLength);
+    handleBodyCallback(body);
+
+    // Update buffer for next message
+    buffer = content.slice(contentLength);
+  }
+  return buffer;
+}
+
 // Server implementation
 function startServer(port) {
   // TLS options for server
@@ -81,52 +122,21 @@ function startServer(port) {
     socket.on('data', (data) => {
       buffer += data.toString('utf8');
 
-      while (buffer.length > 0) {
-        // Check for header delimiter (\r\n\r\n or \n\n)
-        let headerEnd = buffer.indexOf('\r\n\r\n');
-        let delimiterLength = 4;
-        if (headerEnd === -1) {
-          headerEnd = buffer.indexOf('\n\n');
-          delimiterLength = 2;
-        }
-        if (headerEnd === -1) {
-          console.log('No delimiter found in buffer:', buffer);
-          return;
-        }
-
-        // Extract header and content (UTF-8)
-        const header = buffer.slice(0, headerEnd);
-        const content = buffer.slice(headerEnd + delimiterLength);
-
-        // Parse Content-Length
-        const match = header.match(/Content-Length: (\d+)/i);
-        if (!match) {
-          console.error('Invalid Content-Length header:', header);
-          buffer = '';
-          return;
-        }
-
-        const contentLength = parseInt(match[1]);
-
-        // Wait until we have all content (check byte length in UTF-8)
-        if (Buffer.byteLength(content, 'utf8') < contentLength) return;
-
+      buffer = parseIncomingData(buffer, body => {
         // Process complete request
-        const body = content.slice(0, contentLength);
         console.log('Received body:');
         console.log(body);
 
         // Copy body to clipboard
-        execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`)
+        const writeCommand = `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`
+        execPromise(writeCommand)
           .then(() => {
             console.log('Body copied to clipboard');
             lastClientContent = body; // Update last client content
             lastReceivedTime = Date.now(); // Update last received time
           })
           .catch((err) => console.error('Error copying to clipboard:', err));
-        // Update buffer for next message
-        buffer = content.slice(contentLength);
-      }
+      })
     });
 
     // Periodically check clipboard and send data if changed and not from client
@@ -153,7 +163,6 @@ function startServer(port) {
     }
 
     // Check clipboard every 2 seconds
-
     setInterval(checkAndSendClipboardData, CHECK_INTERVAL);
     socket.on('error', (err) => {
       console.error('Socket error:', err);
@@ -199,52 +208,20 @@ async function startClient(port, host) {
   client.on('data', (data) => {
     buffer += data.toString('utf8');
 
-    while (buffer.length > 0) {
-      // Check for header delimiter (\r\n\r\n or \n\n)
-      let headerEnd = buffer.indexOf('\r\n\r\n');
-      let delimiterLength = 4;
-      if (headerEnd === -1) {
-        headerEnd = buffer.indexOf('\n\n');
-        delimiterLength = 2;
-      }
-      if (headerEnd === -1) {
-        console.log('No delimiter found in buffer:', buffer);
-        return;
-      }
-
-      // Extract header and content (UTF-8)
-      const header = buffer.slice(0, headerEnd);
-      const content = buffer.slice(headerEnd + delimiterLength);
-
-      // Parse Content-Length
-      const match = header.match(/Content-Length: (\d+)/i);
-      if (!match) {
-        console.error('Invalid Content-Length header:', header);
-        buffer = '';
-        return;
-      }
-
-      const contentLength = parseInt(match[1]);
-
-      // Wait until we have all content (check byte length in UTF-8)
-      if (Buffer.byteLength(content, 'utf8') < contentLength) return;
-
-      // Process complete request
-      const body = content.slice(0, contentLength);
+    buffer = parseIncomingData(buffer, (body) => {
       console.log('Received body from server:');
       console.log(body);
 
       // Copy body to clipboard
-      execPromise(`printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`)
+      const writeCommand = `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`
+      execPromise(writeCommand)
         .then(() => {
           console.log('Body copied to clipboard');
           lastReceivedContent = body; // Update last received content
           lastReceivedTime = Date.now(); // Update last received time
         })
         .catch((err) => console.error('Error copying to clipboard:', err));
-      // Update buffer for next message
-      buffer = content.slice(contentLength);
-    }
+      });
   });
 
   // Periodically check clipboard and send data if changed and not from server
@@ -271,7 +248,6 @@ async function startClient(port, host) {
   }
 
   // Check clipboard every 2 seconds
-
   setInterval(checkAndSendClipboardData, CHECK_INTERVAL);
   client.on('error', (err) => {
     console.error('Client error:', err);
