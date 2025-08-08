@@ -128,7 +128,9 @@ function startServer(port) {
         console.log(body);
 
         // Copy body to clipboard
-        const writeCommand = `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`
+        const writeCommand = isWindows 
+          ? `chcp 65001 > nul && printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}` 
+          : `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`;
         execPromise(writeCommand)
           .then(() => {
             console.log('Body copied to clipboard');
@@ -213,7 +215,9 @@ async function startClient(port, host) {
       console.log(body);
 
       // Copy body to clipboard
-      const writeCommand = `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`
+      const writeCommand = isWindows 
+        ? `chcp 65001 > nul && printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}` 
+        : `printf %s "${body.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" | ${clipboardWriteCommand}`;
       execPromise(writeCommand)
         .then(() => {
           console.log('Body copied to clipboard');
